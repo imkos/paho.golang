@@ -2,12 +2,11 @@ package paho
 
 import (
 	"fmt"
-	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/eclipse/paho.golang/packets"
+	"github.com/imkos/paho.golang/packets"
 )
 
 // PingFailHandler is a type for the function that is invoked
@@ -28,7 +27,7 @@ type PingFailHandler func(error)
 // SetDebug() is used to pass in a Logger to be used to log debug
 // information, for example sharing a logger with the main client
 type Pinger interface {
-	Start(net.Conn, time.Duration)
+	Start(*Client, time.Duration)
 	Stop()
 	PingResp()
 	SetDebug(Logger)
@@ -38,7 +37,7 @@ type Pinger interface {
 type PingHandler struct {
 	mu              sync.Mutex
 	lastPing        time.Time
-	conn            net.Conn
+	ownClient       *Client
 	stop            chan struct{}
 	pingFailHandler PingFailHandler
 	pingOutstanding int32
@@ -56,11 +55,15 @@ func DefaultPingerWithCustomFailHandler(pfh PingFailHandler) *PingHandler {
 	}
 }
 
+var (
+	errPingResponseTimeout = fmt.Errorf("ping resp timed out")
+)
+
 // Start is the library provided Pinger's implementation of
 // the required interface function()
-func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
+func (p *PingHandler) Start(c *Client, pt time.Duration) {
 	p.mu.Lock()
-	p.conn = c
+	p.ownClient = c
 	p.stop = make(chan struct{})
 	p.mu.Unlock()
 	checkTicker := time.NewTicker(pt / 4)
@@ -70,14 +73,22 @@ func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
 		case <-p.stop:
 			return
 		case <-checkTicker.C:
-			if atomic.LoadInt32(&p.pingOutstanding) > 0 && time.Since(p.lastPing) > (pt+pt>>1) {
-				p.pingFailHandler(fmt.Errorf("ping resp timed out"))
-				//ping outstanding and not reset in 1.5 times ping timer
+			po := atomic.LoadInt32(&p.pingOutstanding)
+			p.debug.Printf("pingOutstanding: %d, lastPing: %v, pt+pt>>1: %v \n", po, time.Since(p.lastPing), pt+pt>>1)
+			if po > 0 && time.Since(p.lastPing) > (pt+pt>>1) {
+				p.pingFailHandler(errPingResponseTimeout)
+				// ping outstanding and not reset in 1.5 times ping timer
+				return
+			}
+			// ping outstanding and not reset in 1 times,the network cable is suddenly disconnected, arm platform maybe write no error.
+			if po > 1 {
+				p.pingFailHandler(errPingResponseTimeout)
 				return
 			}
 			if time.Since(p.lastPing) >= pt {
-				//time to send a ping
-				if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
+				// time to send a ping
+				// if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
+				if err := p.ownClient.doWrite(packets.NewControlPacket(packets.PINGREQ)); err != nil {
 					if p.pingFailHandler != nil {
 						p.pingFailHandler(err)
 					}
@@ -102,7 +113,7 @@ func (p *PingHandler) Stop() {
 	p.debug.Println("pingHandler stopping")
 	select {
 	case <-p.stop:
-		//Already stopped, do nothing
+		// Already stopped, do nothing
 	default:
 		close(p.stop)
 	}

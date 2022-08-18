@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/eclipse/paho.golang/paho"
-	"github.com/eclipse/paho.golang/paho/extensions/rpc"
+	"github.com/imkos/paho.golang/paho"
+	"github.com/imkos/paho.golang/paho/extensions/rpc"
 )
 
 func init() {
@@ -138,7 +138,7 @@ func main() {
 	password := flag.String("password", "", "Password to match username")
 	flag.Parse()
 
-	//paho.SetDebugLogger(log.New(os.Stderr, "RPC: ", log.LstdFlags))
+	// paho.SetDebugLogger(log.New(os.Stderr, "RPC: ", log.LstdFlags))
 
 	listener(*server, *rTopic, *username, *password)
 

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/eclipse/paho.golang/packets"
+	"github.com/imkos/paho.golang/packets"
 )
 
 // MessageHandler is a type for a function that is invoked
@@ -78,7 +78,7 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 	if pb.Properties.TopicAlias != nil {
 		r.debug.Println("message is using topic aliasing")
 		if pb.Topic != "" {
-			//Register new alias
+			// Register new alias
 			r.debug.Printf("registering new topic alias '%d' for topic '%s'", *pb.Properties.TopicAlias, m.Topic)
 			r.aliases[*pb.Properties.TopicAlias] = pb.Topic
 		}
@@ -193,7 +193,7 @@ func (s *SingleHandlerRouter) Route(pb *packets.Publish) {
 	if pb.Properties.TopicAlias != nil {
 		s.debug.Println("message is using topic aliasing")
 		if pb.Topic != "" {
-			//Register new alias
+			// Register new alias
 			s.debug.Printf("registering new topic alias '%d' for topic '%s'", *pb.Properties.TopicAlias, m.Topic)
 			s.aliases[*pb.Properties.TopicAlias] = pb.Topic
 		}

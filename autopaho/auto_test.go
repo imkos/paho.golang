@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse/paho.golang/paho"
+	"github.com/imkos/paho.golang/paho"
 )
 
 func TestClientConfig_buildConnectPacket(t *testing.T) {
@@ -90,5 +90,4 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 	if *(cp.WillProperties.WillDelayInterval) != 200 { // verifies the override
 		t.Errorf("Will message Delay Interval did not match expected [200]: found [%v]", *(cp.Properties.WillDelayInterval))
 	}
-
 }

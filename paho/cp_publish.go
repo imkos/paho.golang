@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/eclipse/paho.golang/packets"
+	"github.com/imkos/paho.golang/packets"
 )
 
 type (

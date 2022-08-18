@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse/paho.golang/packets"
+	"github.com/imkos/paho.golang/packets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
@@ -32,7 +32,7 @@ func TestMidNoExhaustion(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 
 	for i := 0; i < 70000; i++ {
 		p := &Publish{

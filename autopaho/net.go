@@ -14,7 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/eclipse/paho.golang/paho"
+	"github.com/imkos/paho.golang/paho"
 )
 
 // Network (establishing connection) functionality for AutoPaho
@@ -108,7 +108,6 @@ func attemptWebsocketConnection(ctx context.Context, tlsc *tls.Config, cfg *WebS
 		dialer = &d
 	}
 	ws, _, err := dialer.DialContext(ctx, brokerURL.String(), requestHeader)
-
 	if err != nil {
 		return nil, fmt.Errorf("websocket connection failed: %w", err)
 	}
