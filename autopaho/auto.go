@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -44,11 +45,18 @@ type ClientConfig struct {
 	ConnectTimeout    time.Duration    // How long to wait for the connection process to complete (defaults to 10s)
 	WebSocketCfg      *WebSocketConfig // Enables customisation of the websocket connection
 
-	OnConnectionUp func(*ConnectionManager, *paho.Connack) // Called (within a goroutine) when a connection is made (including reconnection). Connection Manager passed to simplify subscriptions.
-	OnConnectError func(error)                             // Called (within a goroutine) whenever a connection attempt fails
+	// AttemptConnection, if provided, will be called to establish a network connection.
+	// The returned `conn` must support thread safe writing; most wrapped net.Conn implementations like tls.Conn
+	// are not thread safe for writing.
+	// To fix, use packets.NewThreadSafeConn wrapper or extend the custom net.Conn struct with sync.Locker.
+	AttemptConnection func(context.Context, ClientConfig, *url.URL) (net.Conn, error)
 
-	Debug     paho.Logger // By default set to NOOPLogger{},set to a logger for debugging info
-	PahoDebug paho.Logger // debugger passed to the paho package (will default to NOOPLogger{})
+	OnConnectionUp func(*ConnectionManager, *paho.Connack) // Called (within a goroutine) when a connection is made (including reconnection). Connection Manager passed to simplify subscriptions.
+	OnConnectError func(error)                             // Called (within a goroutine) whenever a connection attempt fails. Will wrap autopaho.ConnackError on server deny.
+
+	Debug      paho.Logger // By default set to NOOPLogger{},set to a logger for debugging info
+	PahoDebug  paho.Logger // debugger passed to the paho package (will default to NOOPLogger{})
+	PahoErrors paho.Logger // error logger passed to the paho package (will default to NOOPLogger{})
 
 	connectUsername string
 	connectPassword []byte
@@ -66,7 +74,7 @@ type ClientConfig struct {
 	connectPacketBuilder func(*paho.Connect) *paho.Connect
 
 	// We include the full paho.ClientConfig in order to simplify moving between the two packages.
-	// Note that that Conn will be ignored.
+	// Note that Conn will be ignored.
 	paho.ClientConfig
 }
 
@@ -183,7 +191,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 		cancelCtx: cancel,
 		done:      make(chan struct{}),
 	}
-	errChan := make(chan error)
+	errChan := make(chan error, 1) // Will be sent one, and only one error per connection (buffered to prevent deadlock)
 
 	go func() {
 		defer close(c.done)
@@ -211,23 +219,20 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			c.mu.Unlock()
 			close(c.connUp)
 
-			if cfg.PahoDebug != nil {
-				cli.SetDebugLogger(cfg.PahoDebug)
-			}
-
 			if cfg.OnConnectionUp != nil {
 				cfg.OnConnectionUp(&c, connAck)
 			}
 
 			var err error
 			select {
-			case err = <-errChan: // Message on error channel indicates connection has (or will) drop.
+			case err = <-errChan: // Message on the error channel indicates connection has (or will) drop.
 			case <-innerCtx.Done():
-				// As the connection is up we call disconnect to shut things down cleanly
+				eh.shutdown() // Prevent any errors triggered by closure of context from reaching user
+				// As the connection is up, we call disconnect to shut things down cleanly
 				if err = c.cli.Disconnect(&paho.Disconnect{ReasonCode: 0}); err != nil {
 					cfg.Debug.Printf("disconnect returned error: %s\n", err)
 				}
-				if ctx.Err() != nil { // If this is due to outer context being cancelled then this will have happened before the inner one gets cancelled.
+				if ctx.Err() != nil { // If this is due to outer context being cancelled, then this will have happened before the inner one gets cancelled.
 					cfg.Debug.Printf("broker connection handler exiting due to context: %s\n", ctx.Err())
 				} else {
 					cfg.Debug.Printf("broker connection handler exiting due to Disconnect call: %s\n", innerCtx.Err())
